@@ -1,0 +1,144 @@
+---
+title: "Project 1: Preparation of an Analytic Dataset"
+author: "Asher Xu"
+date: "2026-09-23"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+library(tidyverse)
+```
+
+## Project Objective
+
+The goal of this project is to prepare an analytic dataset for future prediction of emergency department visits or unanticipated hospital admissions between chemotherapy appointments among patients with ovarian cancer. This report focuses on merging, cleaning, and summarizing the provided data, rather than fitting a prediction model.
+
+## Data Import and Merge
+
+```{r import-and-merge, include=FALSE}
+# Use project-relative paths; do not hardcode computer-specific paths.
+patient_data <- read_csv("PatientData-2.csv")
+encounter_data <- read_csv("EncounterData-2.csv")
+
+# Preserve encounters while adding patient-level information by MRN.
+analytic_data <- encounter_data %>%
+  left_join(patient_data, by = "MRN")
+```
+
+## Analytic Dataset Description
+
+The merged analytic dataset contains **550 rows and 14 variables**. Each row represents one patient encounter, not one unique patient. Encounter-level variables include contact date, encounter type, temperature, distress score, white blood cell count (WBC), and body mass index (BMI). Patient-level variables include medical record number (MRN), date of birth, race, financial class, ethnicity, hypertension, congestive heart failure (CHF), and diabetes.
+
+## Data Cleaning
+
+```{r cleaning, include=FALSE}
+# Retain missing distress scores and BMI values.
+# WBC readings below the detection limit are set to 1.
+analytic_data <- analytic_data %>%
+  mutate(WBC = if_else(WBC < 1, 1, WBC))
+
+# Negative BMI readings (-989 in these data) are implausible.
+# Mark them missing without removing their encounters.
+analytic_data <- analytic_data %>%
+  mutate(BMI = if_else(BMI < 0, NA_real_, BMI))
+
+# Assign categories after applying the WBC detection-limit rule.
+analytic_data <- analytic_data %>%
+  mutate(
+    WBC_category = factor(
+      case_when(
+        is.na(WBC) ~ "Not Taken",
+        WBC < 3.2 ~ "Low",
+        WBC <= 9.8 ~ "Normal",
+        WBC > 9.8 ~ "High"
+      ),
+      levels = c("Low", "Normal", "High", "Not Taken")
+    )
+  )
+```
+
+The original analytic dataset contained **53 missing distress scores** and **86 missing BMI values**. Six additional BMI values of -989 were implausible and were recoded as missing, resulting in **92 missing BMI values**. These encounters were retained.
+
+As specified in the project instructions, WBC values below 1 were replaced with 1 because they were below the limit of detection. WBC was then categorized as Low (less than 3.2), Normal (3.2–9.8), High (greater than 9.8), or Not Taken (missing). No WBC values were missing in the supplied data.
+
+## WBC Distribution by Encounter
+
+```{r wbc-table, results='asis'}
+wbc_table <- analytic_data %>%
+  count(WBC_category, .drop = FALSE) %>%
+  mutate(Percent = round(n / sum(n) * 100, 1))
+
+knitr::kable(
+  wbc_table,
+  col.names = c("WBC Category", "Count", "Percent (%)"),
+  caption = "Distribution of WBC Categories Among Encounters (N = 550)",
+  align = c("l", "r", "r")
+)
+```
+
+## Patient Characteristics (Table 1)
+
+Patient characteristics are summarized using the **50 unique patient-level records**, rather than the encounter-level dataset, so that patients with multiple encounters are not counted repeatedly. Percentages are calculated within each characteristic.
+
+```{r patient-table, results='asis'}
+table1 <- patient_data %>%
+  select(race, ethnicity, financialclass, hypertension, CHF, diabetes) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "Variable",
+    values_to = "Category"
+  ) %>%
+  group_by(Variable, Category) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(Variable) %>%
+  mutate(
+    Percent = round(n / sum(n) * 100, 1),
+    `n (%)` = sprintf("%d (%.1f%%)", n, Percent)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    Variable = recode(Variable,
+      race = "Race",
+      ethnicity = "Ethnicity",
+      financialclass = "Financial class",
+      hypertension = "Hypertension",
+      CHF = "Congestive heart failure (CHF)",
+      diabetes = "Diabetes"
+    ),
+    Variable = factor(Variable, levels = c(
+      "Race", "Ethnicity", "Financial class", "Hypertension",
+      "Congestive heart failure (CHF)", "Diabetes"
+    ))
+  ) %>%
+  arrange(Variable, Category) %>%
+  select(Variable, Category, `n (%)`)
+
+knitr::kable(
+  table1,
+  col.names = c("Characteristic", "Category", "n (%)"),
+  caption = "Table 1. Patient Characteristics (N = 50)",
+  align = c("l", "l", "r")
+)
+```
+
+## Software Versions
+
+```{r versions, results='asis'}
+version_table <- tibble(
+  Software = c("R", "tidyverse", "dplyr", "readr", "tidyr", "knitr", "rmarkdown"),
+  Version = c(
+    as.character(getRversion()),
+    as.character(packageVersion("tidyverse")),
+    as.character(packageVersion("dplyr")),
+    as.character(packageVersion("readr")),
+    as.character(packageVersion("tidyr")),
+    as.character(packageVersion("knitr")),
+    as.character(packageVersion("rmarkdown"))
+  )
+)
+knitr::kable(version_table, caption = "R and Package Versions", align = c("l", "l"))
+```

@@ -1,0 +1,162 @@
+---
+title: "Project1"
+author: "Asher Xu"
+date: "2026-09-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+
+
+
+```{r}
+## Import Data
+library(tidyverse)
+
+patient_data <- read_csv("PatientData-2.csv")
+encounter_data <- read_csv("EncounterData-2.csv")
+```
+
+```{r}
+analytic_data <- encounter_data %>%
+  left_join(patient_data, by = "MRN")
+```
+
+```{r}
+dim(analytic_data)
+names(analytic_data)
+#The analytic dataset contains 550 rows and 14 variables. Each row represents one patient encounter. The dataset includes encounter-level variables, such as contact date, encounter type, temperature, distress score, WBC, and BMI, as well as patient-level variables, including date of birth, race, financial class, ethnicity, hypertension, CHF, and diabetes.
+```
+```{r}
+summary(analytic_data)
+
+colSums(is.na(analytic_data))
+```
+```{r}
+analytic_data <- analytic_data %>%
+  mutate(WBC = if_else(WBC < 1, 1, WBC))
+summary(analytic_data$WBC)
+```
+
+```{r}
+analytic_data %>%
+  filter(BMI < 0) %>%
+  select(MRN, contact_date, BMI)
+```
+
+```{r}
+analytic_data <- analytic_data %>%
+  mutate(BMI = if_else(BMI < 0, NA_real_, BMI))
+summary(analytic_data$BMI)
+```
+
+```{r}
+analytic_data <- analytic_data %>%
+  mutate(
+    WBC_category = case_when(
+      is.na(WBC) ~ "Not Taken",
+      WBC < 3.2 ~ "Low",
+      WBC <= 9.8 ~ "Normal",
+      WBC > 9.8 ~ "High"
+    )
+  )
+table(analytic_data$WBC_category)
+```
+
+```{r}
+wbc_table <- analytic_data %>%
+  mutate(
+    WBC_category = factor(
+      WBC_category,
+      levels = c("Low", "Normal", "High", "Not Taken")
+    )
+  ) %>%
+  count(WBC_category, .drop = FALSE) %>%
+  mutate(
+    Percent = round(n / sum(n) * 100, 1)
+  )
+```
+
+
+
+```{r}
+# Examine patient-level categorical variables
+patient_data %>%
+  select(race, ethnicity, financialclass,
+         hypertension, CHF, diabetes) %>%
+  summary()
+```
+
+
+
+```{r}
+# Create Table 1 using patient-level data
+table1 <- patient_data %>%
+  select(race, ethnicity, financialclass,
+         hypertension, CHF, diabetes) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "Variable",
+    values_to = "Category"
+  ) %>%
+  group_by(Variable, Category) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(Variable) %>%
+  mutate(
+    Percent = round(n / sum(n) * 100, 1),
+    `n (%)` = sprintf("%d (%.1f%%)", n, Percent)
+  ) %>%
+  ungroup() %>%
+  select(Variable, Category, `n (%)`)
+
+table1
+```
+```{r}
+# Format WBC table
+knitr::kable(
+  wbc_table,
+  col.names = c("WBC Category", "Count", "Percent (%)"),
+  caption = "Table 1. Distribution of WBC Categories Among Encounters",
+  align = c("l", "r", "r")
+)
+
+# Format patient characteristics table
+knitr::kable(
+  table1,
+  col.names = c("Variable", "Category", "n (%)"),
+  caption = "Table 2. Patient Characteristics (N = 50)",
+  align = c("l", "l", "r")
+)
+```
+
+
+## Data Cleaning
+
+The analytic dataset was examined for missing and implausible values. There were 53 missing distress scores and 86 missing BMI values in the original data. In addition, six BMI values of -989 were identified as implausible and recoded as missing, resulting in 92 missing BMI values. These observations were retained in the dataset.
+
+Following the project instructions, WBC values below 1 were replaced with 1 because they were below the limit of detection. WBC was then categorized into Low, Normal, High, and Not Taken.
+
+```{r}
+
+# R and package versions
+R.version.string
+
+packageVersion("tidyverse")
+packageVersion("dplyr")
+packageVersion("readr")
+packageVersion("tidyr")
+packageVersion("knitr")
+packageVersion("rmarkdown")
+
+```
+
+
+
+
